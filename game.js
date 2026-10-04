@@ -69,11 +69,15 @@ function buildStandings() {
     row.className = `racer-row ${index === 0 ? 'is-leader' : ''}`;
     row.style.setProperty('--kart', driver.color);
     row.style.setProperty('--row-tint', driver.color);
-    row.innerHTML = `<span class="rank"><span class="rank-number"></span><span class="rank-move"></span></span><span class="mini-kart" aria-hidden="true"></span><span class="driver"><span class="driver-name"></span><span class="driver-party"></span></span><span class="vote-cell"><span class="vote-value"></span><span class="vote-gap"></span></span><span class="vote-bar" aria-hidden="true"><span></span></span>`;
+    row.innerHTML = `<span class="rank"><span class="rank-number"></span><span class="rank-move"></span></span><span class="mini-kart" aria-hidden="true"></span><span class="driver"><span class="driver-name"></span><span class="driver-party"></span></span><span class="vote-cell"><span class="vote-main"><span class="vote-value"></span><span class="vote-count"></span></span><span class="vote-gap"></span></span><span class="vote-bar" aria-hidden="true"><span></span></span>`;
     row.querySelector('.rank-number').textContent = String(index + 1).padStart(2, '0');
     row.querySelector('.driver-name').textContent = driver.name;
     row.querySelector('.driver-party').textContent = driver.party;
     row.querySelector('.vote-value').textContent = `${formatVote(driver.votes)}%`;
+    row.querySelector('.vote-count').textContent = Number.isFinite(driver.voteCount)
+      ? new Intl.NumberFormat('pt-BR').format(driver.voteCount)
+      : '—';
+    row.querySelector('.vote-count').title = Number.isFinite(driver.voteCount) ? `${new Intl.NumberFormat('pt-BR').format(driver.voteCount)} votos` : 'Votos indisponíveis na demonstração';
     row.querySelector('.vote-gap').textContent = index === 0 ? 'LÍDER' : `−${formatVote(leaderVotes - driver.votes)}`;
     row.querySelector('.vote-bar span').style.width = `${Math.max(2, (driver.votes / leaderVotes) * 100)}%`;
     const past = rankHistory.get(driver.id);
@@ -89,7 +93,7 @@ function buildStandings() {
   });
   standings.replaceChildren(fragment);
   buildBarStandings();
-  document.querySelector('#racer-count').innerHTML = `${String(drivers.length).padStart(2, '0')} <small>PILOTOS</small>`;
+  document.querySelector('#racer-count').innerHTML = `${String(drivers.length).padStart(2, '0')} <small>KARTS</small>`;
   const leader = drivers[0];
   if (leader) {
     const card = document.querySelector('#leader-card');
@@ -109,11 +113,15 @@ function buildBarStandings() {
     const item = document.createElement('li');
     item.className = `bar-racer ${index === 0 ? 'is-leader' : ''}`;
     item.style.setProperty('--kart', driver.color);
-    item.innerHTML = '<span class="bar-rank"></span><span class="bar-name"></span><span class="bar-vote"></span>';
+    item.innerHTML = '<span class="bar-rank"></span><span class="bar-name"></span><span class="bar-vote"><span class="bar-percent"></span><small class="bar-count"></small></span>';
     item.querySelector('.bar-rank').textContent = String(index + 1).padStart(2, '0');
     item.querySelector('.bar-name').textContent = driver.name;
     item.querySelector('.bar-name').title = `${driver.name} · ${driver.party}`;
-    item.querySelector('.bar-vote').textContent = `${formatVote(driver.votes)}%`;
+    item.querySelector('.bar-percent').textContent = `${formatVote(driver.votes)}%`;
+    item.querySelector('.bar-count').textContent = Number.isFinite(driver.voteCount)
+      ? new Intl.NumberFormat('pt-BR').format(driver.voteCount)
+      : '—';
+    item.querySelector('.bar-count').title = Number.isFinite(driver.voteCount) ? `${new Intl.NumberFormat('pt-BR').format(driver.voteCount)} votos` : 'Votos indisponíveis na demonstração';
     fragment.append(item);
   });
   barStandings.replaceChildren(fragment);
@@ -180,12 +188,15 @@ function flattenCandidates(result) {
   if (!presidential) throw new Error('O arquivo EA20 ainda não contém o cargo de presidente.');
   const votes = result.v || {};
   const validVotes = parseTseNumber(votes.vv);
+  const blankVotes = parseTseNumber(votes.vb);
+  const nullVotes = parseTseNumber(votes.vn);
   const candidates = (presidential.agr || []).flatMap((group) =>
     (group.par || []).flatMap((party) =>
       (party.cand || []).map((candidate) => ({ candidate, party, group }))));
   const usable = candidates.filter(({ candidate }) => !String(candidate.dvt || '').toLowerCase().includes('anulado'));
-  const voteTotal = validVotes || usable.reduce((total, item) => total + parseTseNumber(item.candidate.vap), 0);
-  return usable.map(({ candidate, party, group }, index) => {
+  const candidateVoteTotal = usable.reduce((total, item) => total + parseTseNumber(item.candidate.vap), 0);
+  const voteTotal = parseTseNumber(votes.tv) || validVotes + blankVotes + nullVotes || validVotes || candidateVoteTotal;
+  const candidateDrivers = usable.map(({ candidate, party, group }, index) => {
     const votesCount = parseTseNumber(candidate.vap);
     const old = drivers.find((driver) => driver.id === String(candidate.sqcand || candidate.n));
     const colorPair = old ? [old.color, old.glow] : kartPalette[index % kartPalette.length];
@@ -194,10 +205,24 @@ function flattenCandidates(result) {
       name: candidate.nmu || candidate.nm || 'Candidatura',
       party: party.sg || group.com || group.nm || 'PARTIDO',
       votes: voteTotal ? votesCount / voteTotal * 100 : 0,
+      voteCount: votesCount,
       currentVotes: old?.currentVotes ?? (voteTotal ? votesCount / voteTotal * 100 : 0),
       color: colorPair[0], glow: colorPair[1],
     };
-  }).sort((a, b) => b.votes - a.votes);
+  });
+  const specialDrivers = [
+    { id: 'tse-blank', name: 'Brancos', party: 'VOTOS EM BRANCO', count: blankVotes, color: '#f5f7fa', glow: '#ffffff' },
+    { id: 'tse-null', name: 'Nulos', party: 'VOTOS NULOS', count: nullVotes, color: '#a8b2c2', glow: '#d2d9e3' },
+  ].map(({ id, name, party, count, color, glow }) => {
+    const old = drivers.find((driver) => driver.id === id);
+    const share = voteTotal ? count / voteTotal * 100 : 0;
+    return {
+      id, name, party, voteCount: count, votes: share,
+      currentVotes: old?.currentVotes ?? share,
+      color: old?.color ?? color, glow: old?.glow ?? glow,
+    };
+  });
+  return [...candidateDrivers, ...specialDrivers].sort((a, b) => b.votes - a.votes);
 }
 
 function updateOfficialMetadata(result) {
@@ -205,6 +230,10 @@ function updateOfficialMetadata(result) {
   state.sectionPct = sectionPct;
   document.querySelector('#sections-percent').textContent = `${formatVote(sectionPct)}%`;
   document.querySelector('#sections-progress').style.width = `${sectionPct}%`;
+  const totalVotes = parseTseNumber(result.v?.tv) || parseTseNumber(result.v?.vv);
+  document.querySelector('#total-votes').textContent = totalVotes
+    ? `${new Intl.NumberFormat('pt-BR').format(totalVotes)} votos`
+    : '— votos';
   const timestamp = `${result.dg || ''} ${result.hg || ''}`.trim();
   document.querySelector('#last-update').textContent = timestamp || 'Atualizado pelo TSE';
   document.querySelector('#source-detail').textContent = `Brasil · EA20 · geração ${timestamp || 'informada pelo TSE'}`;
@@ -410,6 +439,7 @@ function showDemoResults() {
   state.sectionPct = 38.4;
   document.querySelector('#sections-percent').textContent = '38,4%';
   document.querySelector('#sections-progress').style.width = '38.4%';
+  document.querySelector('#total-votes').textContent = '— votos';
   document.querySelector('#last-update').innerHTML = 'DEMO <small>sem horário oficial</small>';
   document.querySelector('.lap-counter strong').innerHTML = '01 <i>/</i> 01';
   buildStandings();
@@ -792,7 +822,7 @@ function drawTrack(w, h, time) {
     ctx.restore();
   }
 
-  drivers.slice(0, 8).forEach((driver, index) => {
+  drivers.slice(0, 12).forEach((driver, index) => {
     // Vote share determines the kart's point on the circuit; the position
     // changes only when a new official result file is received.
     const pose = kartPose(driver, index, cx, cy, rx, ry, roadW);
@@ -911,7 +941,7 @@ function drawTrackLabels(w, h) {
   const zoom = state.camera.zoom;
   // In immersive mode karts grow with the screen, and their badges follow.
   const k = Math.max(1, Math.min(state.immersive ? 1.9 : 1.35, Math.min(w, h) / 460));
-  drivers.slice(0, 8).forEach((driver, index) => {
+  drivers.slice(0, 12).forEach((driver, index) => {
     const pose = kartPose(driver, index, cx, cy, rx, ry, roadW);
     const angle = pose.angle;
     const world = rotatePoint(pose.x, pose.y, cx, cy);
@@ -935,8 +965,20 @@ function drawTrackLabels(w, h) {
     ctx.textAlign = 'left'; ctx.fillStyle = '#dce2ea';
     ctx.font = `600 ${(isMobile ? 7 : 8) * k}px "DM Mono", monospace`;
     ctx.fillText(isMobile ? `P${index + 1}` : fitText(driver.name.toUpperCase(), badgeW - 12 * k), badgeX + 6 * k, badgeY + badgeH * .37);
-    ctx.fillStyle = driver.color; ctx.font = `700 ${(isMobile ? 9 : 11) * k}px "Barlow Condensed", Impact, sans-serif`;
-    ctx.fillText(`${formatVote(driver.votes)}%`, badgeX + 6 * k, badgeY + badgeH * .73);
+    ctx.fillStyle = driver.color;
+    const percent = `${formatVote(driver.votes)}%`;
+    const percentFont = (isMobile ? 9 : 11) * k;
+    ctx.font = `700 ${percentFont}px "Barlow Condensed", Impact, sans-serif`;
+    ctx.fillText(percent, badgeX + 6 * k, badgeY + badgeH * .73);
+    if (Number.isFinite(driver.voteCount)) {
+      const count = new Intl.NumberFormat('pt-BR').format(driver.voteCount);
+      const countX = badgeX + 9 * k + ctx.measureText(percent).width;
+      const countMaxWidth = Math.max(8 * k, badgeW - (countX - badgeX) - 5 * k);
+      const countFont = Math.max(4 * k, Math.min((isMobile ? 5.5 : 6.5) * k, countMaxWidth / Math.max(1, count.length * .62)));
+      ctx.fillStyle = '#dce2ea';
+      ctx.font = `500 ${countFont}px "DM Mono", monospace`;
+      ctx.fillText(count, countX, badgeY + badgeH * .73, countMaxWidth);
+    }
     ctx.restore();
   });
 }
