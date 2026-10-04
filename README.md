@@ -14,6 +14,7 @@ Uma corrida visual inspirada em jogos de kart para acompanhar a apuração presi
 - Classificação com candidatos, partidos e percentual de votos válidos.
 - Indicador de seções totalizadas, fonte dos dados e horário da atualização.
 - Dados oficiais do TSE quando disponíveis; placar de demonstração identificado enquanto isso.
+- Contagem regressiva para a divulgação e início automático das consultas em tempo real às 17h (horário de Brasília).
 - Simulação da apuração com dados de teste do TSE ou, se indisponíveis, dados fictícios identificados como simulação.
 - Visões panorâmica, aérea e do líder, além de modo de tela cheia.
 - Interface adaptada para desktop e dispositivos móveis.

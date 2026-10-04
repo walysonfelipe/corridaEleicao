@@ -16,6 +16,7 @@ Sirva a pasta com `python3 -m http.server 8000` e abra `http://localhost:8000` e
 - Quando chegam resultados oficiais novos, os karts avançam ou recuam suavemente conforme os percentuais mudam.
 - Uma troca de liderança é mostrada como uma ultrapassagem, com destaque visual breve.
 - O HUD mostra a posição dos candidatos, seus percentuais, o percentual de seções totalizadas, a fonte dos dados e o horário da última atualização.
+- Uma contagem regressiva mostra quanto falta para as 17h (horário de Brasília). Nesse horário, o modo em tempo real é ativado automaticamente e o TSE passa a ser consultado a cada cinco segundos.
 - Entre atualizações, a animação continua, mas os karts não inventam mudanças nos resultados.
 - A corrida só termina quando a apuração oficial for concluída. Uma liderança parcial não dispara a vitória.
 

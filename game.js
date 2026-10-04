@@ -23,6 +23,7 @@ const barSim = document.querySelector('#bar-sim');
 const barLive = document.querySelector('#bar-live');
 const simNote = document.querySelector('.sim-note');
 const SIM_NOTE = simNote.textContent;
+const countdownCard = document.querySelector('#countdown-card');
 const state = {
   mode: 'track', rotation: 0, dpr: 1, width: 0, height: 0,
   started: performance.now(), motion: 0, lastFrame: 0, sectionPct: 38.4, official: false, failures: 0,
@@ -292,6 +293,30 @@ function scheduleRealtimeLock() {
   // Long delays are re-evaluated in steps; setTimeout cannot wait longer.
   if (Number.isFinite(next)) state.lockTimer = window.setTimeout(onRealtimeTimer, Math.min(next - now, MAX_TIMER_DELAY));
   return roundChanged;
+}
+
+function updateCountdown() {
+  const { round, start } = realtimeWindow();
+  const remaining = Math.max(0, Math.ceil((start - Date.now()) / 1000));
+  if (state.locked || remaining === 0) {
+    if (!state.locked) scheduleRealtimeLock();
+    countdownCard.classList.add('is-live');
+    document.querySelector('#countdown-label').textContent = 'APURAÇÃO EM TEMPO REAL';
+    document.querySelector('#countdown-detail').textContent = state.official
+      ? 'Dados oficiais do TSE · atualiza a cada 5 segundos'
+      : 'Consulta automática ativa · aguardando dados do TSE';
+    return;
+  }
+
+  countdownCard.classList.remove('is-live');
+  document.querySelector('#countdown-label').textContent = 'APURAÇÃO EM TEMPO REAL COMEÇA EM';
+  document.querySelector('#countdown-detail').textContent = round === 1
+    ? 'Hoje, às 17h · horário de Brasília'
+    : 'Segundo turno · às 17h · horário de Brasília';
+  document.querySelector('#countdown-days').textContent = String(Math.floor(remaining / 86400)).padStart(2, '0');
+  document.querySelector('#countdown-hours').textContent = String(Math.floor((remaining % 86400) / 3600)).padStart(2, '0');
+  document.querySelector('#countdown-minutes').textContent = String(Math.floor((remaining % 3600) / 60)).padStart(2, '0');
+  document.querySelector('#countdown-seconds').textContent = String(remaining % 60).padStart(2, '0');
 }
 
 function onRealtimeTimer() {
@@ -1011,4 +1036,6 @@ resizeCanvas();
 requestAnimationFrame(frame);
 state.roundDates = { ...DEFAULT_ROUND_DATES };
 scheduleRealtimeLock();
+updateCountdown();
+window.setInterval(updateCountdown, 1000);
 if (!state.locked) connectToTse();
