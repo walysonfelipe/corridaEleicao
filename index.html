@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#04132e" />
+    <link rel="icon" href="/favicon.ico" sizes="any" />
+    <link rel="icon" type="image/png" href="/favicon.png" sizes="256x256" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta name="description" content="Acompanhe a apuração eleitoral como uma corrida ao vivo. Veja candidatos, classificação e evolução dos votos em uma experiência visual interativa." />
+    <link rel="canonical" href="https://corridaeleicao.vercel.app/" />
+    <title>Corrida da Apuração — acompanhe a apuração eleitoral</title>
+    <meta property="og:type" content="website" />
+    <meta property="og:locale" content="pt_BR" />
+    <meta property="og:site_name" content="Corrida da Apuração" />
+    <meta property="og:url" content="https://corridaeleicao.vercel.app/" />
+    <meta property="og:title" content="Corrida da Apuração — acompanhe a apuração eleitoral" />
+    <meta property="og:description" content="Acompanhe a apuração eleitoral como uma corrida ao vivo. Veja candidatos, classificação e evolução dos votos em uma experiência visual interativa." />
+    <meta property="og:image" content="https://corridaeleicao.vercel.app/og-image.jpg" />
+    <meta property="og:image:secure_url" content="https://corridaeleicao.vercel.app/og-image.jpg" />
+    <meta property="og:image:type" content="image/jpeg" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="Logo Corrida da Apuração sobre uma pista nas cores do Brasil" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Corrida da Apuração — acompanhe a apuração eleitoral" />
+    <meta name="twitter:description" content="Acompanhe a apuração eleitoral como uma corrida ao vivo. Veja candidatos, classificação e evolução dos votos em uma experiência visual interativa." />
+    <meta name="twitter:image" content="https://corridaeleicao.vercel.app/og-image.jpg" />
+    <meta name="twitter:image:alt" content="Logo Corrida da Apuração sobre uma pista nas cores do Brasil" />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <main class="race-app">
+      <header class="topbar">
+        <a class="brand" href="#" aria-label="Corrida da Apuração, início">
+          <img class="brand-logo" src="logo.webp" alt="Corrida da Apuração" />
+        </a>
+        <div class="race-tag"><span class="race-flag" aria-hidden="true"></span><span class="race-title">PRESIDENTE</span><span class="tag-divider">·</span><span>BRASIL 2026</span></div>
+        <div class="demo-tag" data-state="demo" role="status"><span class="status-dot" aria-hidden="true"></span>MODO DEMONSTRAÇÃO</div>
+      </header>
+
+      <section class="race-layout" aria-label="Corrida e classificação">
+        <section class="track-panel" aria-label="Pista de corrida">
+          <div class="track-topline">
+            <div class="lap-counter"><span>VOLTA</span><strong>01 <i>/</i> 01</strong></div>
+          </div>
+          <div class="canvas-wrap">
+            <canvas id="race" aria-label="Pista oval com os karts dos candidatos posicionados conforme os votos válidos"></canvas>
+            <div class="camera-label"><span class="camera-icon">◉</span> <span id="camera-name">CÂMERA PANORÂMICA</span></div>
+            <button class="fullscreen-button" id="fullscreen-button" type="button" aria-pressed="false" aria-label="Mostrar só a pista em tela cheia" title="Tela cheia (F) · setas giram a câmera">⛶ <span>TELA CHEIA</span></button>
+            <div class="immersive-bar" id="immersive-bar" aria-label="Controles da tela cheia">
+              <div class="bar-controls">
+                <button class="bar-button active" id="bar-list-toggle" type="button" aria-pressed="true" title="Mostrar ou esconder a classificação">☰ <span class="bar-list-text">Classificação</span></button>
+                <div class="bar-segment" role="group" aria-label="Visão da pista"><button class="camera-button bar-button active" data-camera="track" aria-pressed="true">Pista</button><button class="camera-button bar-button" data-camera="top" aria-pressed="false">Aérea</button><button class="camera-button bar-button" data-camera="leader" aria-pressed="false">Líder</button></div>
+                <div class="bar-segment" role="group" aria-label="Modo da corrida"><button class="bar-button" id="bar-sim" type="button" aria-pressed="false">▶ Simular</button><button class="bar-button" id="bar-live" type="button" aria-pressed="false">● Tempo real</button></div>
+                <span class="bar-status" id="bar-status"></span>
+                <button class="bar-button bar-exit" id="bar-exit" type="button" aria-label="Sair da tela cheia">✕ Sair</button>
+              </div>
+              <ol class="bar-standings" id="bar-standings" aria-label="Classificação"></ol>
+            </div>
+          </div>
+          <div class="track-footer">
+            <div class="completion">
+              <span class="footer-label">SEÇÕES TOTALIZADAS</span>
+              <div class="completion-row"><strong id="sections-percent">38,4%</strong><div class="progress"><span id="sections-progress"></span></div></div>
+            </div>
+            <div class="last-update"><span class="footer-label">ÚLTIMA ATUALIZAÇÃO</span><strong id="last-update">DEMO <small>sem horário oficial</small></strong></div>
+            <div class="data-source"><span class="source-icon">i</span><span><b id="source-label">DADOS ILUSTRATIVOS</b><small id="source-detail">Aguardando conexão com o TSE</small></span></div>
+          </div>
+        </section>
+
+        <aside class="standings-panel" aria-label="Classificação da corrida">
+          <div class="standings-heading"><h2>Classificação</h2><span class="racer-count" id="racer-count">04 <small>PILOTOS</small></span></div>
+          <div class="leader-card" id="leader-card">
+            <div class="leader-top"><span class="crown">♛</span><span>LÍDER DA CORRIDA</span><span class="leader-pulse"></span></div>
+            <div class="leader-main"><div class="leader-info"><div class="leader-name" id="leader-name">Candidato A</div><span class="leader-party" id="leader-party">PARTIDO A</span></div><strong class="leader-vote" id="leader-vote">36,2%</strong></div>
+            <div class="leader-gap" id="leader-gap"></div>
+          </div>
+          <div class="standings-columns" aria-hidden="true"><span>POS</span><span>CANDIDATO</span><span>% VÁLIDOS</span></div>
+          <ol class="standings" id="standings"></ol>
+          <div class="race-mode"><span class="footer-label">MODO DA CORRIDA</span><button class="sim-button" id="sim-button" type="button" aria-pressed="false">▶ Simular apuração</button><button class="live-button" id="live-button" type="button" aria-pressed="false">● Tempo real</button><small class="sim-note">Às 17h (Brasília) do dia da eleição, o TSE entra sozinho.</small></div>
+          <div class="camera-controls"><span class="footer-label">VISÃO DA PISTA</span><div class="camera-buttons"><button class="camera-button active" data-camera="track" aria-pressed="true">Pista</button><button class="camera-button" data-camera="top" aria-pressed="false">Aérea</button><button class="camera-button" data-camera="leader" aria-pressed="false">Líder</button></div></div>
+        </aside>
+      </section>
+      <footer class="page-footer"><span>OS RESULTADOS OFICIAIS PODEM MUDAR</span><span class="credit">CRIADO POR <a href="https://walysonassis.online" target="_blank" rel="noopener">WALYSON · WALYSONASSIS.ONLINE</a></span></footer>
+    </main>
+    <script src="game.js" defer></script>
+  </body>
+</html>
