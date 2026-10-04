@@ -34,8 +34,9 @@ Abra [http://localhost:8000](http://localhost:8000) no navegador. É necessário
 - **← / →:** girar a câmera.
 - **Pista / Aérea / Líder:** trocar o enquadramento.
 - **F ou Tela cheia:** abrir ou sair da visualização imersiva.
-- **Simular apuração:** iniciar a simulação.
-- **Tempo real:** consultar os dados do TSE sem esperar o horário programado.
+- **Começar tempo real / Tentar conectar ao TSE:** só aparece depois das 17h (horário de Brasília) se a troca automática para o ao vivo não acontecer em 30 segundos, ou se os dados do TSE não estiverem chegando.
+
+Antes das 17h (horário de Brasília), a página abre com a simulação da apuração em loop; não há botão para iniciá-la.
 
 As opções também ficam disponíveis na barra de controles do modo de tela cheia.
 

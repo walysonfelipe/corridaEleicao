@@ -26,11 +26,11 @@ O protótipo começa direto na pista. Use as setas esquerda/direita para girar a
 
 ## Simulação da apuração
 
-O botão **Simular apuração**, no painel de classificação, usa o [ambiente de simulado oficial do TSE](https://www.tse.jus.br/eleicoes/informacoes-tecnicas-sobre-a-divulgacao-de-resultados) (`https://resultados-sim.tse.jus.br/simulado`, ambiente `simulado2026`, eleição 21270). Ele carrega o arquivo final de Presidente desse ambiente (`br-c0001-e021270-u.json`) e reproduz a apuração, do 0% até a totalização final do teste, em cerca de um minuto. Os candidatos são os de teste publicados pelo TSE. A tela identifica tudo como **SIMULADO DO TSE · não é resultado**.
+Antes da divulgação oficial, a página abre com a simulação da apuração rodando sozinha, sem botão para iniciá-la. Ela usa o [ambiente de simulado oficial do TSE](https://www.tse.jus.br/eleicoes/informacoes-tecnicas-sobre-a-divulgacao-de-resultados) (`https://resultados-sim.tse.jus.br/simulado`, ambiente `simulado2026`, eleição 21270). Ele carrega o arquivo final de Presidente desse ambiente (`br-c0001-e021270-u.json`) e reproduz a apuração, do 0% até a totalização final do teste, em cerca de três minutos. A contagem começa devagar, acelera no meio e desacelera no fim. Ao concluir, a simulação espera alguns segundos e recomeça do 0% com novas variações, em loop, como um aquecimento até a divulgação oficial começar; o contador de voltas mostra qual aquecimento está em andamento. Os candidatos são os de teste publicados pelo TSE. A tela identifica tudo como **SIMULADO DO TSE · não é resultado**.
 
-Se o simulado do TSE estiver indisponível, o botão roda uma simulação local com candidatos fictícios (Candidato A a F), identificada como **SIMULAÇÃO**. As duas passam pelo mesmo código que lê os arquivos reais (EA20). **Voltar ao resultado real** encerra a simulação.
+Se o simulado do TSE estiver indisponível, roda uma simulação local com candidatos fictícios (Candidato A a F), identificada como **SIMULAÇÃO**. As duas passam pelo mesmo código que lê os arquivos reais (EA20). Às 17h ela para e o modo em tempo real assume sozinho. O botão **Começar tempo real** fica escondido e só aparece se, 30 segundos depois das 17h, a troca automática não tiver acontecido; depois disso, vira **Tentar conectar ao TSE** enquanto os dados oficiais não chegarem ou após três falhas seguidas de consulta.
 
-O modo real continua funcionando durante a simulação. A consulta ao ambiente `oficial` (eleição 6257, 1º turno em 04/10/2026) começa às 17h (horário de Brasília). Se um arquivo oficial chegar durante a simulação, ele é guardado e aparece ao voltar para o modo real.
+O modo real continua funcionando durante a simulação. A consulta ao ambiente `oficial` (eleição 6257, 1º turno em 04/10/2026) começa às 17h (horário de Brasília). Se um arquivo oficial chegar durante a simulação, ele é guardado e aparece quando a simulação termina.
 
 ## Dados
 

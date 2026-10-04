@@ -12,14 +12,12 @@ const ctx = canvas.getContext('2d');
 const standings = document.querySelector('#standings');
 const cameraName = document.querySelector('#camera-name');
 const cameraButtons = [...document.querySelectorAll('.camera-button')];
-const simButton = document.querySelector('#sim-button');
 const liveButton = document.querySelector('#live-button');
 const canvasWrap = document.querySelector('.canvas-wrap');
 const fullscreenButton = document.querySelector('#fullscreen-button');
 const immersiveBar = document.querySelector('#immersive-bar');
 const barStandings = document.querySelector('#bar-standings');
 const barListToggle = document.querySelector('#bar-list-toggle');
-const barSim = document.querySelector('#bar-sim');
 const barLive = document.querySelector('#bar-live');
 const simNote = document.querySelector('.sim-note');
 const SIM_NOTE = simNote.textContent;
@@ -42,6 +40,9 @@ const TSE_BASE = 'https://resultados.tse.jus.br';
 const ELECTIONS_CONFIG_URL = `${TSE_BASE}/oficial/comum/config/ele-c.json`;
 const POLL_INTERVAL = 30_000;
 const REALTIME_INTERVAL = 5_000;
+// After 17h, how long the automatic switch has before the manual button shows.
+const LIVE_FALLBACK_GRACE_MS = 30_000;
+const LIVE_FALLBACK_FAILURES = 3;
 // 2026 rounds; replaced by the dates in the TSE configuration when it loads.
 const DEFAULT_ROUND_DATES = { 1: '04/10/2026', 2: '25/10/2026' };
 const MAX_TIMER_DELAY = 2 ** 31 - 1;
@@ -298,6 +299,7 @@ function scheduleRealtimeLock() {
 function updateCountdown() {
   const { round, start } = realtimeWindow();
   const remaining = Math.max(0, Math.ceil((start - Date.now()) / 1000));
+  updateLiveButton();
   if (state.locked || remaining === 0) {
     if (!state.locked) scheduleRealtimeLock();
     countdownCard.classList.add('is-live');
@@ -334,7 +336,6 @@ function lockRealtime() {
   if (state.source === 'sim') stopSimulation();
   state.realtime = true;
   updateLiveButton();
-  updateSimulationButton();
   simNote.textContent = `Divulgação oficial do ${state.round}º turno iniciada às 17h (horário de Brasília): `
     + 'o modo tempo real fica fixo e consulta o TSE a cada 5 segundos.';
   refreshFromTse();
@@ -344,32 +345,32 @@ function unlockRealtime() {
   state.locked = false;
   state.realtime = false;
   updateLiveButton();
-  updateSimulationButton();
   simNote.textContent = SIM_NOTE;
+  // Back before a disclosure: the warm-up simulation runs again.
+  if (state.source === 'live') startSimulation();
+}
+
+// The real-time button is only a fallback: it appears after 17h when the
+// automatic switch did not happen or the TSE data is not arriving.
+function liveFallbackNeeded() {
+  const { start } = realtimeWindow();
+  if (!(Date.now() >= start + LIVE_FALLBACK_GRACE_MS)) return false;
+  return !state.locked || !state.official || state.failures >= LIVE_FALLBACK_FAILURES;
 }
 
 function updateLiveButton() {
-  liveButton.classList.toggle('active', state.realtime);
-  liveButton.setAttribute('aria-pressed', String(state.realtime));
-  liveButton.textContent = state.realtime ? '● AO VIVO · atualiza a cada 5 s' : '● Tempo real';
-  barLive.classList.toggle('active', state.realtime);
-  barLive.setAttribute('aria-pressed', String(state.realtime));
-  barLive.textContent = state.realtime ? '● Ao vivo · 5 s' : '● Tempo real';
-  liveButton.disabled = state.locked;
-  barLive.disabled = state.locked;
-  if (state.locked) {
-    liveButton.textContent = '● AO VIVO · resultado oficial do TSE';
-    barLive.textContent = '● Ao vivo · oficial';
-  }
+  const show = liveFallbackNeeded();
+  liveButton.hidden = !show;
+  barLive.parentElement.hidden = !show;
+  if (!show) return;
+  liveButton.textContent = state.locked ? '↻ Tentar conectar ao TSE' : '● Começar tempo real';
+  barLive.textContent = state.locked ? '↻ Reconectar' : '● Tempo real';
 }
 
-function toggleRealtime() {
-  if (state.locked) return;
-  state.realtime = !state.realtime;
-  if (state.realtime && state.source === 'sim') stopSimulation();
+function startRealtimeManually() {
+  if (state.locked) refreshFromTse();
+  else lockRealtime();
   updateLiveButton();
-  if (state.realtime) refreshFromTse();
-  else connectToTse();
 }
 
 function delayUntilDisclosure(dateText) {
@@ -433,7 +434,23 @@ const LOCAL_SIM_CANDIDATES = [
   { n: '66', nm: 'Candidato F', sg: 'PARTIDO F', final: 2.8, early: -.02 },
 ];
 const LOCAL_SIM_VALID_VOTES = 118_000_000;
-const SIM_STEP_MS = 1200;
+const SIM_STEP_MS = 1500;
+// Pause on the finished warm-up lap before the count starts over.
+const SIM_LOOP_PAUSE_MS = 6000;
+
+// Section progress for the next step: the count starts slowly, speeds up
+// mid-way and eases into the final sections, like a warm-up lap.
+function nextSimPct(pct) {
+  const next = pct + .3 + 2.4 * Math.sin(Math.PI * pct / 100) ** 2;
+  return next > 99.6 ? 100 : next;
+}
+
+// Each warm-up lap gets a fresh early skew, so the overtakes change every loop.
+function reshuffleSimScenario(scenario) {
+  scenario.candidates.forEach((candidate) => {
+    candidate.early = (Math.random() - .5) * .5;
+  });
+}
 
 function localSimScenario() {
   return {
@@ -494,37 +511,25 @@ function buildSimulatedResult(scenario, pct) {
   };
 }
 
-function showSimulationStatus(scenario, pct) {
+function showSimulationStatus(scenario, pct, lap) {
   state.official = false;
   const done = pct >= 100;
   const fromTse = scenario.source === 'tse';
   setStatusBadge('sim', fromTse ? 'SIMULADO DO TSE' : 'SIMULAÇÃO');
   document.querySelector('#source-label').textContent = fromTse ? 'SIMULADO OFICIAL · TSE' : 'SIMULAÇÃO LOCAL';
   document.querySelector('#source-detail').textContent = fromTse
-    ? `Ambiente de testes simulado2026 · ${done ? 'totalização final do teste' : 'reprodução acelerada'} · não é resultado`
-    : `Candidatos e votos fictícios · ${done ? 'apuração concluída' : 'não são resultados do TSE'}`;
+    ? `Ambiente de testes simulado2026 · aquecimento ${lap} · ${done ? 'reiniciando em instantes' : 'reprodução em loop'} · não é resultado`
+    : `Candidatos e votos fictícios · aquecimento ${lap} · ${done ? 'reiniciando em instantes' : 'não são resultados do TSE'}`;
   document.querySelector('#last-update').innerHTML =
-    `${fromTse ? 'SIMULADO' : 'SIMULAÇÃO'} <small>${done ? 'concluído' : 'em andamento'}</small>`;
-}
-
-function updateSimulationButton(loading = false) {
-  const running = state.source === 'sim';
-  simButton.disabled = loading || state.locked;
-  simButton.classList.toggle('active', running);
-  simButton.setAttribute('aria-pressed', String(running));
-  simButton.textContent = loading ? 'Carregando simulado do TSE…'
-    : running ? '■ Voltar ao resultado real' : '▶ Simular apuração';
-  barSim.disabled = loading || state.locked;
-  barSim.classList.toggle('active', running);
-  barSim.setAttribute('aria-pressed', String(running));
-  barSim.textContent = loading ? 'Carregando…' : running ? '■ Parar simulação' : '▶ Simular';
+    `${fromTse ? 'SIMULADO' : 'SIMULAÇÃO'} <small>${done ? 'reiniciando' : 'aquecendo antes do ao vivo'}</small>`;
+  document.querySelector('.lap-counter strong').innerHTML = `${String(lap).padStart(2, '0')} <i>/</i> ∞`;
 }
 
 async function startSimulation() {
   window.clearTimeout(state.simTimer);
   const run = ++state.simRun;
   state.source = 'sim';
-  updateSimulationButton(true);
+  setStatusBadge('sim', 'CARREGANDO SIMULAÇÃO');
   let scenario;
   try {
     scenario = await loadTseSimScenario();
@@ -534,19 +539,29 @@ async function startSimulation() {
   }
   // The user may have left the simulation while the file was loading.
   if (run !== state.simRun || state.source !== 'sim') return;
-  updateSimulationButton();
-  // Start every kart on the starting line.
-  drivers = [];
+  // The simulation loops as a warm-up until the user stops it or the
+  // official disclosure starts (lockRealtime stops it at 17h).
+  let lap = 0;
   let pct = 0;
+  const startLap = () => {
+    lap += 1;
+    pct = 0;
+    if (lap > 1) reshuffleSimScenario(scenario);
+    // Start every kart on the starting line.
+    drivers = [];
+    step();
+  };
   const step = () => {
     applyResult(buildSimulatedResult(scenario, pct));
-    showSimulationStatus(scenario, pct);
-    if (pct >= 100) return;
-    pct = Math.min(100, pct + Math.max(.8, (100 - pct) * .07));
-    if (pct > 99.6) pct = 100;
+    showSimulationStatus(scenario, pct, lap);
+    if (pct >= 100) {
+      state.simTimer = window.setTimeout(startLap, SIM_LOOP_PAUSE_MS);
+      return;
+    }
+    pct = nextSimPct(pct);
     state.simTimer = window.setTimeout(step, SIM_STEP_MS);
   };
-  step();
+  startLap();
 }
 
 function stopSimulation() {
@@ -555,7 +570,6 @@ function stopSimulation() {
   state.source = 'live';
   if (state.lastOfficial) applyOfficialResult(state.lastOfficial);
   else showDemoResults();
-  updateSimulationButton();
 }
 
 async function pollTseResults() {
@@ -960,21 +974,8 @@ function setCamera(mode) {
 }
 
 cameraButtons.forEach((button) => button.addEventListener('click', () => setCamera(button.dataset.camera)));
-function toggleSimulation() {
-  if (state.locked) return;
-  if (state.source === 'sim') return stopSimulation();
-  if (state.realtime) {
-    state.realtime = false;
-    updateLiveButton();
-    connectToTse();
-  }
-  return startSimulation();
-}
-
-simButton.addEventListener('click', toggleSimulation);
-barSim.addEventListener('click', toggleSimulation);
-liveButton.addEventListener('click', toggleRealtime);
-barLive.addEventListener('click', toggleRealtime);
+liveButton.addEventListener('click', startRealtimeManually);
+barLive.addEventListener('click', startRealtimeManually);
 barListToggle.addEventListener('click', () => {
   const show = canvasWrap.classList.toggle('hide-list') === false;
   barListToggle.classList.toggle('active', show);
@@ -1038,4 +1039,8 @@ state.roundDates = { ...DEFAULT_ROUND_DATES };
 scheduleRealtimeLock();
 updateCountdown();
 window.setInterval(updateCountdown, 1000);
-if (!state.locked) connectToTse();
+if (!state.locked) {
+  connectToTse();
+  // Until the disclosure starts, a looping simulation warms up the track.
+  startSimulation();
+}
