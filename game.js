@@ -483,15 +483,17 @@ function applyOfficialResult(result) {
 }
 
 // Once the official file reaches 100% of the sections (or the final
-// totalization), a full screen shows who was elected or goes to the runoff.
+// totalization), or the TSE marks the result as mathematically defined (`md`),
+// a full screen shows who was elected or goes to the runoff.
 // It opens by itself once per round; afterwards the leader card reopens it.
 const finalScreen = document.querySelector('#final-screen');
 const finalOpen = document.querySelector('#final-open');
 
 function updateFinalScreen(result) {
   const complete = result.tf === 's' || parseTseNumber(result.s?.pst) >= 100;
+  const defined = result.md === 's';
   const decided = drivers.filter((driver) => driver.outcome);
-  const ready = complete && decided.length > 0;
+  const ready = (complete || defined) && decided.length > 0;
   finalOpen.hidden = !ready;
   if (!ready) return;
   const round = String(result.t || state.round || '1');
@@ -524,6 +526,7 @@ function updateFinalScreen(result) {
   document.querySelector('#final-cards').replaceChildren(cards);
   const runoffDate = state.roundDates?.[2];
   document.querySelector('#final-meta').textContent = [
+    !complete ? 'Resultado matematicamente definido pelo TSE' : '',
     `${formatVote(parseTseNumber(result.s?.pst))}% das seções totalizadas`,
     `gerado ${result.dg || ''} ${result.hg || ''}`.trim(),
     !elected && round === '1' && runoffDate ? `2º turno em ${runoffDate}` : '',
@@ -538,10 +541,9 @@ function updateFinalScreen(result) {
 function showFinalScreen(on) {
   finalScreen.hidden = !on;
   document.body.classList.toggle('has-final', on);
-  if (on) document.querySelector('#final-close').focus();
+  if (on) document.querySelector('#final-states').focus();
 }
 
-document.querySelector('#final-close').addEventListener('click', () => showFinalScreen(false));
 finalOpen.addEventListener('click', () => showFinalScreen(true));
 
 // The TSE can keep answering with an old file; flag it once the generation

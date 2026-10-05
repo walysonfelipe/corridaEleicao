@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#04132e" />
+    <link rel="icon" href="/favicon.ico" sizes="any" />
+    <link rel="icon" type="image/png" href="/favicon.png" sizes="256x256" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta name="description" content="Resultados da eleição 2026 por estado: presidente, governador, senador, deputados federais e deputados estaduais, com dados oficiais do TSE." />
+    <link rel="canonical" href="https://corridaeleicao.vercel.app/estados.html" />
+    <title>Resultados por Estado — Corrida da Apuração</title>
+    <meta property="og:type" content="website" />
+    <meta property="og:locale" content="pt_BR" />
+    <meta property="og:site_name" content="Corrida da Apuração" />
+    <meta property="og:url" content="https://corridaeleicao.vercel.app/estados.html" />
+    <meta property="og:title" content="Resultados por Estado — Corrida da Apuração" />
+    <meta property="og:description" content="Presidente, governador, senador, deputados federais e estaduais em cada estado, com dados oficiais do TSE." />
+    <meta property="og:image" content="https://corridaeleicao.vercel.app/og-image.jpg" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <!-- Google tag (gtag.js) -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-LZXPFM03VW"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+
+      gtag('config', 'G-LZXPFM03VW');
+    </script>
+    <link rel="preconnect" href="https://resultados.tse.jus.br" crossorigin />
+    <link rel="preconnect" href="https://resultados.tse.jus.br" />
+    <link rel="stylesheet" href="estados.css" />
+  </head>
+  <body>
+    <main class="states-app">
+      <header class="states-topbar">
+        <a class="brand" href="index.html" aria-label="Voltar para a Corrida da Apuração">
+          <img class="brand-logo" src="logo.webp" alt="Corrida da Apuração" />
+        </a>
+        <div class="page-tag"><span class="page-flag" aria-hidden="true"></span><span class="page-title">RESULTADOS POR ESTADO</span><span class="tag-divider">·</span><span>BRASIL 2026</span></div>
+        <div class="status-tag" id="status-tag" data-state="loading" role="status"><span class="status-dot" aria-hidden="true"></span><span id="status-text">CONECTANDO AO TSE</span></div>
+      </header>
+
+      <section class="filters" aria-label="Filtros">
+        <label class="field">
+          <span class="field-label">ESTADO</span>
+          <select id="uf-select"></select>
+        </label>
+        <label class="field" id="round-field" hidden>
+          <span class="field-label">TURNO</span>
+          <select id="round-select"></select>
+        </label>
+        <label class="field field-search">
+          <span class="field-label">BUSCAR CANDIDATO</span>
+          <input id="search-input" type="search" placeholder="Nome, número ou partido" autocomplete="off" />
+        </label>
+        <label class="toggle">
+          <input id="elected-only" type="checkbox" />
+          <span>Só eleitos / 2º turno (inclui projeção)</span>
+        </label>
+        <a class="back-link" href="index.html">← Voltar à corrida</a>
+      </section>
+
+      <nav class="office-tabs" id="office-tabs" aria-label="Cargo"></nav>
+
+      <section class="summary" id="summary" aria-label="Resumo da apuração"></section>
+
+      <section class="results-panel" aria-live="polite">
+        <div class="results-heading">
+          <h1 id="results-title">Carregando…</h1>
+          <div class="results-meta">
+            <span id="results-count"></span>
+            <button class="refresh-button" id="refresh-button" type="button">↻ Atualizar</button>
+          </div>
+        </div>
+        <p class="projection-note" id="projection-note" hidden></p>
+        <div class="message" id="message" hidden></div>
+        <ol class="candidates" id="candidates"></ol>
+        <button class="more-button" id="more-button" type="button" hidden>Mostrar mais</button>
+      </section>
+
+      <footer class="page-footer">
+        <span>FONTE: TSE · RESULTADOS.TSE.JUS.BR · OS RESULTADOS OFICIAIS PODEM MUDAR</span>
+        <span class="credit">CRIADO POR <a href="https://walysonassis.online" target="_blank" rel="noopener">WALYSON · WALYSONASSIS.ONLINE</a></span>
+      </footer>
+    </main>
+    <script src="estados.js" defer></script>
+  </body>
+</html>
