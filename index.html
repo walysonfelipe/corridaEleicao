@@ -81,9 +81,10 @@
         <aside class="standings-panel" aria-label="Classificação da corrida">
           <div class="standings-heading"><h2>Classificação</h2><span class="racer-count" id="racer-count">04 <small>PILOTOS</small></span></div>
           <div class="leader-card" id="leader-card">
-            <div class="leader-top"><span class="crown">♛</span><span>LÍDER DA CORRIDA</span><span class="leader-pulse"></span></div>
+            <div class="leader-top"><span class="crown">♛</span><span id="leader-title">LÍDER DA CORRIDA</span><span class="leader-pulse"></span></div>
             <div class="leader-main"><div class="leader-info"><div class="leader-name" id="leader-name">Candidato A</div><span class="leader-party" id="leader-party">PARTIDO A</span></div><strong class="leader-vote" id="leader-vote">36,2%</strong></div>
             <div class="leader-gap" id="leader-gap"></div>
+            <button class="final-open" id="final-open" type="button" hidden>🏁 Ver resultado final</button>
           </div>
           <div class="standings-columns" aria-hidden="true"><span>POS</span><span>CANDIDATO</span><span>% VOTOS</span></div>
           <ol class="standings" id="standings"></ol>
@@ -93,6 +94,17 @@
       </section>
       <footer class="page-footer"><span>OS RESULTADOS OFICIAIS PODEM MUDAR</span><span class="credit">CRIADO POR <a href="https://walysonassis.online" target="_blank" rel="noopener">WALYSON · WALYSONASSIS.ONLINE</a></span></footer>
     </main>
+    <section class="final-screen" id="final-screen" role="dialog" aria-modal="true" aria-labelledby="final-title" hidden>
+      <div class="final-inner">
+        <span class="final-flag" aria-hidden="true"></span>
+        <p class="final-kicker" id="final-kicker">PRESIDENTE · BRASIL 2026 · RESULTADO DO 1º TURNO</p>
+        <h2 class="final-title" id="final-title">VÃO AO 2º TURNO</h2>
+        <div class="final-cards" id="final-cards"></div>
+        <p class="final-meta" id="final-meta"></p>
+        <div class="final-actions"><button class="final-button" id="final-close" type="button">Ver a corrida</button></div>
+        <small class="final-note">Fonte: TSE · arquivo oficial EA20 · os resultados oficiais podem mudar</small>
+      </div>
+    </section>
     <script src="game.js" defer></script>
   </body>
 </html>

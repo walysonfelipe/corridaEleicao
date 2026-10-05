@@ -19,6 +19,9 @@ Sirva a pasta com `python3 -m http.server 8000` e abra `http://localhost:8000` e
 - Uma contagem regressiva mostra quanto falta para as 17h (horário de Brasília). Nesse horário, o modo em tempo real é ativado automaticamente e o TSE passa a ser consultado a cada cinco segundos.
 - Entre atualizações, a animação continua, mas os karts não inventam mudanças nos resultados.
 - A corrida só termina quando a apuração oficial for concluída. Uma liderança parcial não dispara a vitória.
+- Quando o TSE marca o resultado como matematicamente definido (`md`), o contador mostra **DEFINIDO** e os candidatos recebem a etiqueta **ELEITO** ou **2º TURNO**, conforme a situação (`st`/`e`) do arquivo EA20. Se o TSE marcar `md` antes de preencher `st`, a página aplica a regra da eleição: mais de 50% dos votos válidos elege; senão, os dois primeiros vão ao 2º turno.
+- Quando o arquivo oficial chega a 100% das seções totalizadas (ou à totalização final), abre uma tela própria com quem foi eleito ou quem vai ao 2º turno de Presidente, com os percentuais de votos válidos. Ela abre sozinha uma vez por turno; **Ver a corrida** fecha, e **Ver resultado final**, no cartão do líder, reabre.
+- Se o arquivo do TSE ficar mais de 10 minutos sem uma nova geração (antes da totalização final), o selo muda para **TSE SEM ATUALIZAÇÃO** e informa há quanto tempo o arquivo não muda.
 
 ## Primeira versão
 

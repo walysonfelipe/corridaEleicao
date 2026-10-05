@@ -43,6 +43,8 @@ const REALTIME_INTERVAL = 5_000;
 // After 17h, how long the automatic switch has before the manual button shows.
 const LIVE_FALLBACK_GRACE_MS = 30_000;
 const LIVE_FALLBACK_FAILURES = 3;
+// Minutes without a new TSE file before the page says the data is stale.
+const STALE_RESULT_MINUTES = 10;
 // 2026 rounds; replaced by the dates in the TSE configuration when it loads.
 const DEFAULT_ROUND_DATES = { 1: '04/10/2026', 2: '25/10/2026' };
 const MAX_TIMER_DELAY = 2 ** 31 - 1;
@@ -66,13 +68,18 @@ function buildStandings() {
   const now = Date.now();
   drivers.forEach((driver, index) => {
     const row = document.createElement('li');
-    row.className = `racer-row ${index === 0 ? 'is-leader' : ''}`;
+    row.className = `racer-row ${index === 0 ? 'is-leader' : ''} ${driver.outcome ? `is-${driver.outcome}` : ''}`;
     row.style.setProperty('--kart', driver.color);
     row.style.setProperty('--row-tint', driver.color);
-    row.innerHTML = `<span class="rank"><span class="rank-number"></span><span class="rank-move"></span></span><span class="mini-kart" aria-hidden="true"></span><span class="driver"><span class="driver-name"></span><span class="driver-party"></span></span><span class="vote-cell"><span class="vote-main"><span class="vote-value"></span><span class="vote-count"></span></span><span class="vote-gap"></span></span><span class="vote-bar" aria-hidden="true"><span></span></span>`;
+    row.innerHTML = `<span class="rank"><span class="rank-number"></span><span class="rank-move"></span></span><span class="mini-kart" aria-hidden="true"></span><span class="driver"><span class="driver-name"></span><span class="driver-party"></span><span class="outcome-tag" hidden></span></span><span class="vote-cell"><span class="vote-main"><span class="vote-value"></span><span class="vote-count"></span></span><span class="vote-gap"></span></span><span class="vote-bar" aria-hidden="true"><span></span></span>`;
     row.querySelector('.rank-number').textContent = String(index + 1).padStart(2, '0');
     row.querySelector('.driver-name').textContent = driver.name;
     row.querySelector('.driver-party').textContent = driver.party;
+    if (driver.outcome) {
+      const tag = row.querySelector('.outcome-tag');
+      tag.hidden = false;
+      tag.textContent = OUTCOME_LABELS[driver.outcome];
+    }
     row.querySelector('.vote-value').textContent = `${formatVote(driver.votes)}%`;
     row.querySelector('.vote-count').textContent = Number.isFinite(driver.voteCount)
       ? new Intl.NumberFormat('pt-BR').format(driver.voteCount)
@@ -103,6 +110,16 @@ function buildStandings() {
     const second = drivers[1];
     document.querySelector('#leader-gap').textContent = second ? `+${formatVote(leader.votes - second.votes)} pts sobre o 2º` : '';
     card.style.setProperty('--leader', leader.color);
+    card.classList.toggle('is-decided', Boolean(leader.outcome));
+    let title = 'LÍDER DA CORRIDA';
+    if (leader.outcome === 'elected') {
+      title = state.resultRound === '1' ? 'ELEITO NO 1º TURNO' : 'ELEITO PRESIDENTE';
+    } else if (leader.outcome === 'runoff') {
+      title = 'VAI AO 2º TURNO';
+      const rival = drivers.find((driver) => driver !== leader && driver.outcome === 'runoff');
+      if (rival) document.querySelector('#leader-gap').textContent = `2º turno contra ${rival.name}`;
+    }
+    document.querySelector('#leader-title').textContent = title;
   }
 }
 
@@ -111,12 +128,13 @@ function buildBarStandings() {
   const fragment = document.createDocumentFragment();
   drivers.forEach((driver, index) => {
     const item = document.createElement('li');
-    item.className = `bar-racer ${index === 0 ? 'is-leader' : ''}`;
+    item.className = `bar-racer ${index === 0 ? 'is-leader' : ''} ${driver.outcome ? `is-${driver.outcome}` : ''}`;
     item.style.setProperty('--kart', driver.color);
     item.innerHTML = '<span class="bar-rank"></span><span class="bar-name"></span><span class="bar-vote"><span class="bar-percent"></span><small class="bar-count"></small></span>';
     item.querySelector('.bar-rank').textContent = String(index + 1).padStart(2, '0');
     item.querySelector('.bar-name').textContent = driver.name;
-    item.querySelector('.bar-name').title = `${driver.name} · ${driver.party}`;
+    item.querySelector('.bar-name').title = `${driver.name} · ${driver.party}${driver.outcome ? ` · ${OUTCOME_LABELS[driver.outcome]}` : ''}`;
+    if (driver.outcome) item.querySelector('.bar-rank').textContent = driver.outcome === 'elected' ? '✓' : '2T';
     item.querySelector('.bar-percent').textContent = `${formatVote(driver.votes)}%`;
     item.querySelector('.bar-count').textContent = Number.isFinite(driver.voteCount)
       ? new Intl.NumberFormat('pt-BR').format(driver.voteCount)
@@ -183,6 +201,31 @@ function buildResultUrl(config, election, filename) {
   return `${directory}/${filename}`;
 }
 
+// The TSE marks each candidate's situation (`st`, `e`); `md` says the result
+// is mathematically defined. On election night `md` can arrive before `st`.
+const OUTCOME_LABELS = { elected: 'ELEITO', runoff: '2º TURNO' };
+const OUTCOME_SHORT = { elected: '✓', runoff: '2T' };
+
+function candidateOutcome(candidate) {
+  const status = String(candidate.st || '').toLowerCase();
+  if (/2[ºo°]\s*turno|segundo turno/.test(status)) return 'runoff';
+  if (candidate.e === 's' || (status.includes('eleito') && !/n[ãa]o/.test(status))) return 'elected';
+  return '';
+}
+
+// Only when the TSE says the result is defined (`md`) or the count reached
+// 100%, but `st` is still empty: more than half of the valid votes elects; otherwise the top two go to
+// the runoff (first round only).
+function applyDefinedOutcome(result, candidateDrivers) {
+  const complete = result.tf === 's' || parseTseNumber(result.s?.pst) >= 100;
+  if ((result.md !== 's' && !complete) || candidateDrivers.some((driver) => driver.outcome)) return;
+  const validTotal = candidateDrivers.reduce((total, driver) => total + driver.voteCount, 0);
+  const ranked = [...candidateDrivers].sort((a, b) => b.voteCount - a.voteCount);
+  if (!validTotal || !ranked.length) return;
+  if (ranked[0].voteCount / validTotal > .5 || String(result.t) === '2') ranked[0].outcome = 'elected';
+  else ranked.slice(0, 2).forEach((driver) => { driver.outcome = 'runoff'; });
+}
+
 function flattenCandidates(result) {
   const presidential = (result.carg || []).find((office) => String(office.cd).padStart(4, '0') === '0001');
   if (!presidential) throw new Error('O arquivo EA20 ainda não contém o cargo de presidente.');
@@ -206,10 +249,13 @@ function flattenCandidates(result) {
       party: party.sg || group.com || group.nm || 'PARTIDO',
       votes: voteTotal ? votesCount / voteTotal * 100 : 0,
       voteCount: votesCount,
+      outcome: candidateOutcome(candidate),
+      validPct: parseTseNumber(candidate.pvapn || candidate.pvap),
       currentVotes: old?.currentVotes ?? (voteTotal ? votesCount / voteTotal * 100 : 0),
       color: colorPair[0], glow: colorPair[1],
     };
   });
+  applyDefinedOutcome(result, candidateDrivers);
   const specialDrivers = [
     { id: 'tse-blank', name: 'Brancos', party: 'VOTOS EM BRANCO', count: blankVotes, color: '#f5f7fa', glow: '#ffffff' },
     { id: 'tse-null', name: 'Nulos', party: 'VOTOS NULOS', count: nullVotes, color: '#a8b2c2', glow: '#d2d9e3' },
@@ -237,8 +283,11 @@ function updateOfficialMetadata(result) {
   const timestamp = `${result.dg || ''} ${result.hg || ''}`.trim();
   document.querySelector('#last-update').textContent = timestamp || 'Atualizado pelo TSE';
   document.querySelector('#source-detail').textContent = `Brasil · EA20 · geração ${timestamp || 'informada pelo TSE'}`;
+  state.resultRound = String(result.t || state.round || '1');
   if (result.tf === 's') {
     document.querySelector('.lap-counter strong').innerHTML = 'FINAL <i>✓</i>';
+  } else if (result.md === 's') {
+    document.querySelector('.lap-counter strong').innerHTML = 'DEFINIDO <i>⚑</i>';
   } else {
     document.querySelector('.lap-counter strong').innerHTML = '01 <i>/</i> 01';
   }
@@ -429,6 +478,83 @@ function applyResult(result) {
 function applyOfficialResult(result) {
   applyResult(result);
   displayOfficialStatus(true, `Brasil · EA20 · gerado ${result.hg || 'horário indisponível'}`);
+  flagStaleResult(result);
+  updateFinalScreen(result);
+}
+
+// Once the official file reaches 100% of the sections (or the final
+// totalization), a full screen shows who was elected or goes to the runoff.
+// It opens by itself once per round; afterwards the leader card reopens it.
+const finalScreen = document.querySelector('#final-screen');
+const finalOpen = document.querySelector('#final-open');
+
+function updateFinalScreen(result) {
+  const complete = result.tf === 's' || parseTseNumber(result.s?.pst) >= 100;
+  const decided = drivers.filter((driver) => driver.outcome);
+  const ready = complete && decided.length > 0;
+  finalOpen.hidden = !ready;
+  if (!ready) return;
+  const round = String(result.t || state.round || '1');
+  const elected = decided.find((driver) => driver.outcome === 'elected');
+  const shown = elected ? [elected] : decided.filter((driver) => driver.outcome === 'runoff').slice(0, 2);
+  document.querySelector('#final-kicker').textContent = `PRESIDENTE · BRASIL 2026 · RESULTADO DO ${round}º TURNO`;
+  document.querySelector('#final-title').textContent = elected
+    ? (round === '1' ? 'ELEITO NO 1º TURNO' : 'PRESIDENTE ELEITO')
+    : 'VÃO AO 2º TURNO';
+  const cards = document.createDocumentFragment();
+  shown.forEach((driver, index) => {
+    if (index > 0) {
+      const versus = document.createElement('span');
+      versus.className = 'final-versus';
+      versus.textContent = 'VS';
+      cards.append(versus);
+    }
+    const card = document.createElement('article');
+    card.className = 'final-card';
+    card.style.setProperty('--kart', driver.color);
+    card.innerHTML = '<span class="final-rank"></span><strong class="final-name"></strong><span class="final-party"></span><strong class="final-vote"></strong><span class="final-count"></span>';
+    card.querySelector('.final-rank').textContent = `${index + 1}º COLOCADO`;
+    card.querySelector('.final-name').textContent = driver.name;
+    card.querySelector('.final-party').textContent = driver.party;
+    card.querySelector('.final-vote').textContent = `${formatVote(driver.validPct || driver.votes)}%`;
+    card.querySelector('.final-count').textContent =
+      `${new Intl.NumberFormat('pt-BR').format(driver.voteCount)} votos · ${driver.validPct ? 'dos votos válidos' : 'do total'}`;
+    cards.append(card);
+  });
+  document.querySelector('#final-cards').replaceChildren(cards);
+  const runoffDate = state.roundDates?.[2];
+  document.querySelector('#final-meta').textContent = [
+    `${formatVote(parseTseNumber(result.s?.pst))}% das seções totalizadas`,
+    `gerado ${result.dg || ''} ${result.hg || ''}`.trim(),
+    !elected && round === '1' && runoffDate ? `2º turno em ${runoffDate}` : '',
+  ].filter(Boolean).join(' · ');
+  const key = `${result.ele || ''}-${round}`;
+  if (state.finalShownFor !== key) {
+    state.finalShownFor = key;
+    showFinalScreen(true);
+  }
+}
+
+function showFinalScreen(on) {
+  finalScreen.hidden = !on;
+  document.body.classList.toggle('has-final', on);
+  if (on) document.querySelector('#final-close').focus();
+}
+
+document.querySelector('#final-close').addEventListener('click', () => showFinalScreen(false));
+finalOpen.addEventListener('click', () => showFinalScreen(true));
+
+// The TSE can keep answering with an old file; flag it once the generation
+// time is too far behind (the final totalization is not expected to change).
+function flagStaleResult(result) {
+  const [day, month, year] = String(result.dg || '').split('/').map(Number);
+  const generated = Date.parse(`${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}T${result.hg}-03:00`);
+  if (!Number.isFinite(generated) || result.tf === 's') return;
+  const minutes = Math.floor((Date.now() - generated) / 60_000);
+  if (minutes < STALE_RESULT_MINUTES) return;
+  setStatusBadge('stale', 'TSE SEM ATUALIZAÇÃO');
+  document.querySelector('#source-detail').textContent =
+    `Arquivo do TSE sem mudança há ${minutes} min · gerado ${result.hg}`;
 }
 
 function showDemoResults() {
@@ -850,11 +976,16 @@ function kartPose(driver, index, cx, cy, rx, ry, roadW) {
   return { angle, x: cx + cos * a, y: cy + sin * b, heading };
 }
 
-function drawTire(x, y, w, h) {
+function drawTire(x, y, w, h, rotation) {
   ctx.fillStyle = '#0d1310';
   ctx.beginPath(); ctx.roundRect(x, y, w, h, 2); ctx.fill();
   ctx.fillStyle = 'rgba(255,255,255,.12)';
-  for (let ty = y + 2; ty < y + h - 1; ty += 2.5) ctx.fillRect(x + 1, ty, w - 2, .8);
+  const treadLength = h - 2;
+  const phase = ((rotation % 2.5) + 2.5) % 2.5;
+  for (let stripe = 0; stripe < 4; stripe += 1) {
+    const offset = (stripe * 2.5 + phase) % treadLength;
+    ctx.fillRect(x + 1, y + 1 + offset, w - 2, .8);
+  }
 }
 
 // Top-down racing kart; the artwork points toward -y.
@@ -866,6 +997,7 @@ function drawKart(x, y, angle, driver, index, time) {
   ctx.rotate(angle);
   ctx.scale(scale, scale);
   const glow = .18 + Math.sin(time * .003 + index * 1.4) * .045;
+  const tireRotation = state.motion * .7;
 
   // Ground shadow.
   ctx.save();
@@ -877,8 +1009,8 @@ function drawKart(x, y, angle, driver, index, time) {
   // Axles and tires.
   ctx.fillStyle = '#5b6660';
   ctx.fillRect(-11, -11.5, 22, 2); ctx.fillRect(-13, 10, 26, 2);
-  drawTire(-14, -16, 5, 10); drawTire(9, -16, 5, 10);
-  drawTire(-16, 5, 6, 12); drawTire(10, 5, 6, 12);
+  drawTire(-14, -16, 5, 10, tireRotation); drawTire(9, -16, 5, 10, tireRotation);
+  drawTire(-16, 5, 6, 12, tireRotation); drawTire(10, 5, 6, 12, tireRotation);
 
   // Front wing and rear bumper.
   ctx.fillStyle = '#1b2520';
@@ -964,7 +1096,10 @@ function drawTrackLabels(w, h) {
     ctx.textBaseline = 'middle';
     ctx.textAlign = 'left'; ctx.fillStyle = '#dce2ea';
     ctx.font = `600 ${(isMobile ? 7 : 8) * k}px "DM Mono", monospace`;
-    ctx.fillText(isMobile ? `P${index + 1}` : fitText(driver.name.toUpperCase(), badgeW - 12 * k), badgeX + 6 * k, badgeY + badgeH * .37);
+    const outcome = OUTCOME_SHORT[driver.outcome];
+    const nameLine = isMobile ? (outcome || `P${index + 1}`) : (outcome ? `${outcome} ${driver.name.toUpperCase()}` : driver.name.toUpperCase());
+    if (outcome) ctx.fillStyle = '#ffd600';
+    ctx.fillText(fitText(nameLine, badgeW - 12 * k), badgeX + 6 * k, badgeY + badgeH * .37);
     ctx.fillStyle = driver.color;
     const percent = `${formatVote(driver.votes)}%`;
     const percentFont = (isMobile ? 9 : 11) * k;
@@ -1043,6 +1178,7 @@ window.addEventListener('keydown', (event) => {
     state.rotation += event.key === 'ArrowLeft' ? -.055 : .055;
   }
   if (event.key.toLowerCase() === 'f') toggleFullscreen();
+  if (event.key === 'Escape' && !finalScreen.hidden) showFinalScreen(false);
   if (event.key === 'Escape' && state.immersive && !document.fullscreenElement) setImmersive(false);
 });
 
