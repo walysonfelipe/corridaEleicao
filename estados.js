@@ -37,7 +37,7 @@ const OFFICES = [
 const state = {
   elections: DEFAULT_ELECTIONS, templates: { ...DEFAULT_TEMPLATES },
   uf: 'sp', office: '1', round: '1',
-  query: '', electedOnly: false, limit: PAGE_SIZE, parliamentScope: 'br', parliamentFocus: null, legendOpen: false,
+  query: '', electedOnly: false, limit: PAGE_SIZE, parliamentScope: 'br', parliamentFocus: null, legendOpen: false, resultUrl: '',
   result: null, candidates: [], projected: false, request: 0, timer: 0,
 };
 
@@ -69,7 +69,8 @@ function officesFor(uf, round) {
   const available = state.elections[round] || {};
   return OFFICES.filter(({ cd }) => {
     if (!available[cd]) return false;
-    if (uf === 'br') return cd === '1';
+    // Nationally, senators and deputies add up the files of every state.
+    if (uf === 'br') return cd !== '3' && cd !== '8';
     if (cd === '7') return uf !== 'df';
     if (cd === '8') return uf === 'df';
     return true;
@@ -111,11 +112,12 @@ function resultUrl(uf = state.uf, office = state.office, round = state.round) {
   return `${fillTemplate(state.templates.u, uf, code)}/${file}`;
 }
 
-// Presidential photos live in the national folder.
-function photoUrl(sqcand) {
-  const code = state.elections[state.round][state.office];
-  const uf = state.office === '1' ? 'br' : state.uf;
-  return `${fillTemplate(state.templates.ft, uf, code)}/${sqcand}.jpeg`;
+// Presidential photos live in the national folder; the others in the folder
+// of the candidate's state (which differs per row in the national list).
+function photoUrl(candidate) {
+  const uf = state.office === '1' ? 'br' : candidate.uf || state.uf;
+  const code = state.elections[state.round][chamberOffice(state.office, uf)] || state.elections[state.round][state.office];
+  return `${fillTemplate(state.templates.ft, uf, code)}/${candidate.id}.jpeg`;
 }
 
 function candidateOutcome(candidate) {
@@ -248,7 +250,7 @@ function renderSummary() {
     summary.replaceChildren();
     return;
   }
-  const office = result.carg?.[0] || {};
+  const office = result.carg?.find((item) => String(Number(item.cd)) === state.office) || result.carg?.[0] || {};
   const votes = result.v || {};
   const sections = parseTseNumber(result.s?.pst);
   const cards = [
@@ -288,7 +290,7 @@ function candidateRow(candidate, topVotes, index) {
   image.alt = '';
   image.addEventListener('load', () => image.classList.add('is-loaded'), { once: true });
   image.addEventListener('error', () => image.remove(), { once: true });
-  image.src = photoUrl(candidate.id);
+  image.src = photoUrl(candidate);
   photo.append(image);
   row.append(photo);
 
@@ -303,13 +305,15 @@ function candidateRow(candidate, topVotes, index) {
   if (candidate.validity && !normalize(candidate.validity).startsWith('valido')) {
     name.append(element('span', 'tag tag-invalid', candidate.validity.toUpperCase()));
   }
-  info.append(name, element('div', 'candidate-detail', [candidate.party, candidate.group, candidate.fullName].filter(Boolean).join(' · ')));
+  info.append(name, element('div', 'candidate-detail', [candidate.uf?.toUpperCase(), candidate.party, candidate.group, candidate.fullName].filter(Boolean).join(' · ')));
   const mates = runningMatesText(candidate.running);
   if (mates) info.append(element('div', 'candidate-extra', mates));
   row.append(info);
 
   const votes = element('div', 'candidate-votes');
-  votes.append(element('strong', '', formatPct(candidate.pct)), element('small', '', `${numberFormat.format(candidate.votes)} votos`));
+  // In the national list the percentage is of the candidate's own state.
+  const pct = candidate.uf ? `${formatPct(candidate.pct)} em ${candidate.uf.toUpperCase()}` : formatPct(candidate.pct);
+  votes.append(element('strong', '', pct), element('small', '', `${numberFormat.format(candidate.votes)} votos`));
   row.append(votes);
 
   const bar = element('span', 'candidate-bar');
@@ -325,7 +329,7 @@ function renderCandidates() {
   const filtered = state.candidates.filter((candidate) => {
     if (state.electedOnly && !candidate.outcome && !candidate.projection) return false;
     if (!query) return true;
-    return [candidate.name, candidate.fullName, candidate.number, candidate.party, candidate.group]
+    return [candidate.name, candidate.fullName, candidate.number, candidate.party, candidate.group, candidate.uf]
       .some((field) => normalize(field).includes(query));
   });
   const topVotes = state.candidates[0]?.votes || 0;
@@ -416,6 +420,10 @@ const seatCache = new WeakMap();
 const layoutCache = new Map();
 let parliamentRun = 0;
 let parliamentFrame = 0;
+// While the files of a new chart download, the previous chart stays on screen
+// (faded) and is replaced once, instead of growing state by state.
+let parliamentLoading = false;
+let parliamentProgress = '';
 
 const partyKey = (sg) => normalize(sg).replace(/[^a-z]/g, '').toUpperCase();
 const partyInfo = (sg) => PARTY_INFO[partyKey(sg)] || UNKNOWN_PARTY;
@@ -427,10 +435,10 @@ function chamberOffice(office, uf) {
   return office;
 }
 
-const showsParliament = () => state.uf !== 'br' && PARLIAMENT_OFFICES.includes(state.office);
+const showsParliament = () => PARLIAMENT_OFFICES.includes(state.office);
 
 function parliamentUfs() {
-  return state.parliamentScope === 'br' ? UFS.map(([uf]) => uf).filter((uf) => uf !== 'br') : [state.uf];
+  return state.uf === 'br' || state.parliamentScope === 'br' ? UFS.map(([uf]) => uf).filter((uf) => uf !== 'br') : [state.uf];
 }
 
 function parliamentUrl(uf) {
@@ -522,7 +530,7 @@ function svgNode(tag, attributes) {
 // Totals drawn inside the empty center, sized to fit it at any seat count.
 function hemicycleCenter(value, caption, hole) {
   const group = svgNode('g', { class: 'hemicycle-center', 'aria-hidden': 'true' });
-  const captionSize = Math.min(0.09, hole * 0.17);
+  const captionSize = Math.min(0.065, hole * 0.17);
   const valueSize = Math.min(0.32, hole * 0.7, hole * 3 / Math.max(3, value.length));
   const number = svgNode('text', { x: 0, y: -captionSize * 1.9, 'font-size': valueSize, class: 'hemicycle-value' });
   number.textContent = value;
@@ -579,13 +587,11 @@ function chamberButton(label, pressed, onClick) {
   return button;
 }
 
-function renderParliament() {
-  const panel = $('#parliament');
-  const visible = showsParliament();
-  panel.hidden = !visible;
-  $('#results-layout').classList.toggle('has-parliament', visible);
-  if (!visible) return;
+function parliamentView() {
+  return [state.uf, state.office, state.uf === 'br' ? 'br' : state.parliamentScope].join('|');
+}
 
+function parliamentHead() {
   const available = officesFor(state.uf, '1').map(({ cd }) => chamberOffice(cd, state.uf));
   const chambers = element('div', 'pill-group');
   chambers.append(...CHAMBERS.map(({ cd, label }) => {
@@ -605,9 +611,36 @@ function renderParliament() {
       loadParliament();
     })));
   const head = element('div', 'parliament-head');
-  head.append(chambers, scopes);
+  head.append(chambers);
+  if (state.uf !== 'br') head.append(scopes);
+  return head;
+}
 
+function renderParliament() {
+  const panel = $('#parliament');
+  const visible = showsParliament();
+  panel.hidden = !visible;
+  $('#results-layout').classList.toggle('has-parliament', visible && state.uf !== 'br');
+  $('#results-layout').classList.toggle('is-national', visible && state.uf === 'br');
+  if (!visible) return;
+
+  const view = parliamentView();
+  if (parliamentLoading && panel.childElementCount) {
+    panel.classList.toggle('is-loading', panel.dataset.view !== view);
+    panel.querySelector('.parliament-head').replaceWith(parliamentHead());
+    panel.querySelector('.parliament-progress').textContent = parliamentProgress;
+    return;
+  }
   const data = parliamentData();
+  const signature = [view, data.total, data.loaded, data.projected, data.seats.map((seat) => `${seat.party}${seat.name}`).join()].join('|');
+  panel.classList.remove('is-loading');
+  if (!parliamentLoading && panel.dataset.signature === signature) {
+    panel.querySelector('.parliament-progress').textContent = '';
+    return;
+  }
+  panel.dataset.view = view;
+  panel.dataset.signature = parliamentLoading ? '' : signature;
+  const head = parliamentHead();
   const groups = new Map();
   data.seats.forEach((seat) => {
     const key = partyKey(seat.party);
@@ -662,12 +695,13 @@ function renderParliament() {
       return card;
     }));
     chart.append(total, list);
-  } else if (seatsInOrder.length) {
+  } else if (seatsInOrder.length && !parliamentLoading) {
     chart.append(hemicycleSvg(seatsInOrder, `${numberFormat.format(defined)} de ${numberFormat.format(data.total)} cadeiras definidas`, numberFormat.format(defined), caption));
   } else {
     chart.classList.add('is-empty');
     const center = element('div', 'hemicycle-empty');
-    center.append(element('strong', '', '0'), element('span', '', caption));
+    if (parliamentLoading) center.append(element('span', '', 'Carregando as cadeiras…'));
+    else center.append(element('strong', '', '0'), element('span', '', caption));
     chart.append(center);
   }
 
@@ -685,7 +719,6 @@ function renderParliament() {
     item.append(swatch, element('span', 'legend-name', partyLabel(group.party)), element('strong', '', numberFormat.format(group.seats.length)));
     item.addEventListener('mouseenter', () => highlightParty(key));
     item.addEventListener('focus', () => highlightParty(key));
-    item.addEventListener('mouseleave', () => highlightParty(state.parliamentFocus));
     item.addEventListener('blur', () => highlightParty(state.parliamentFocus));
     item.addEventListener('click', () => {
       state.parliamentFocus = state.parliamentFocus === key ? null : key;
@@ -694,6 +727,9 @@ function renderParliament() {
     return item;
   };
   const legend = element('div', 'parliament-legend');
+  // Leaving one item for the next keeps the highlight; only leaving the whole
+  // legend restores it, so the chart does not flash between parties.
+  legend.addEventListener('mouseleave', () => highlightParty(state.parliamentFocus));
   const main = element('div', 'legend-grid');
   const shown = bySize.length <= LEGEND_PARTIES + 3 ? bySize.length : LEGEND_PARTIES;
   main.append(...bySize.slice(0, shown).map(legendItem));
@@ -724,7 +760,9 @@ function renderParliament() {
   const note = element('p', 'parliament-note', notes.join(' '));
 
   const cards = chart.classList.contains('seat-cards');
-  panel.replaceChildren(element('span', 'field-label', 'COMPOSIÇÃO'), head, spectrum, chart, ...(cards ? [] : [legend]), note);
+  const title = element('div', 'parliament-title');
+  title.append(element('span', 'field-label', 'COMPOSIÇÃO'), element('span', 'parliament-progress', parliamentProgress));
+  panel.replaceChildren(title, head, spectrum, chart, ...(cards ? [] : [legend]), note);
   if (!groups.has(state.parliamentFocus)) state.parliamentFocus = null;
   highlightParty(state.parliamentFocus);
 }
@@ -741,23 +779,34 @@ function scheduleParliamentRender() {
 // redrawing as each one arrives.
 async function loadParliament() {
   const run = ++parliamentRun;
+  const queue = showsParliament() ? parliamentUfs().map(parliamentUrl).filter((url) => {
+    const cached = url && resultCache.get(url);
+    return url && !(cached && Date.now() - cached.fetchedAt < PARLIAMENT_FRESH_MS);
+  }) : [];
+  const total = queue.length;
+  let done = 0;
+  parliamentLoading = total > 0;
+  parliamentProgress = total > 1 ? `CARREGANDO 0/${total}` : '';
   scheduleParliamentRender();
-  if (!showsParliament()) return;
-  const queue = parliamentUfs().map(parliamentUrl).filter(Boolean);
   const worker = async () => {
     while (queue.length && run === parliamentRun) {
-      const url = queue.shift();
-      const cached = resultCache.get(url);
-      if (cached && Date.now() - cached.fetchedAt < PARLIAMENT_FRESH_MS) continue;
       try {
-        await fetchResult(url);
+        await fetchResult(queue.shift());
       } catch {
         // Not published yet; counted as a state still loading.
       }
-      if (run === parliamentRun) scheduleParliamentRender();
+      done += 1;
+      if (run === parliamentRun && total > 1) {
+        parliamentProgress = `CARREGANDO ${done}/${total}`;
+        scheduleParliamentRender();
+      }
     }
   };
   await Promise.all(Array.from({ length: PARLIAMENT_WORKERS }, worker));
+  if (run !== parliamentRun) return;
+  parliamentLoading = false;
+  parliamentProgress = '';
+  scheduleParliamentRender();
 }
 
 function readStoredResult(url) {
@@ -808,10 +857,41 @@ function showSkeleton() {
   }));
 }
 
-function showResult(result) {
+function setResultsLoading(loading) {
+  $('.results-panel').classList.toggle('is-loading', loading);
+  $('#summary').classList.toggle('is-loading', loading);
+}
+
+// A new selection keeps the previous list on screen (faded) until its file
+// arrives; the skeleton only shows when there is nothing to keep.
+function startLoading() {
+  if (state.result) {
+    setResultsLoading(true);
+    return;
+  }
+  $('#more-button').hidden = true;
+  $('#results-count').textContent = '';
+  $('#projection-note').hidden = true;
+  showMessage('');
+  showSkeleton();
+}
+
+function clearResults() {
+  state.result = null;
+  state.resultUrl = '';
+  state.candidates = [];
+  state.projected = false;
+  setResultsLoading(false);
+  renderSummary();
+  renderCandidates();
+}
+
+function showResult(result, url) {
   // A refresh that brings the same TSE file keeps the list as it is.
-  const unchanged = state.result && result.idg && state.result.idg === result.idg && state.result.cdabr === result.cdabr;
+  const unchanged = state.resultUrl === url && state.result && result.idg && state.result.idg === result.idg;
   state.result = result;
+  state.resultUrl = url;
+  setResultsLoading(false);
   const time = `${result.dg || ''} ${result.hg || ''}`.trim();
   setStatus('official', `DADOS OFICIAIS DO TSE${time ? ` · ${time}` : ''}`);
   loadParliament();
@@ -827,24 +907,101 @@ function scheduleRefresh(delay = REFRESH_INTERVAL) {
   state.timer = window.setTimeout(() => loadResults({ quiet: true }), delay);
 }
 
+const isNational = () => state.uf === 'br' && PARLIAMENT_OFFICES.includes(state.office);
+
+const sumOf = (results, read) => results.reduce((total, result) => total + parseTseNumber(read(result)), 0);
+const pctOf = (part, whole) => (whole ? (part / whole * 100).toFixed(2).replace('.', ',') : '0');
+
+// A national summary built from the state files loaded so far, in the same
+// shape as an EA20 file so the summary cards read it unchanged.
+function nationalResult(results) {
+  const sections = sumOf(results, (result) => result.s?.st);
+  const allSections = sumOf(results, (result) => result.s?.ts);
+  const votes = sumOf(results, (result) => result.v?.tv);
+  const valid = sumOf(results, (result) => result.v?.vv);
+  const validBase = sumOf(results, (result) => result.v?.vvc ?? result.v?.vv);
+  const blank = sumOf(results, (result) => result.v?.vb);
+  const nulls = sumOf(results, (result) => result.v?.tvn ?? result.v?.vn);
+  const voters = sumOf(results, (result) => result.e?.te);
+  const absent = sumOf(results, (result) => result.e?.a);
+  const done = results.length === UFS.length - 1 && results.every((result) => result.tf === 's');
+  const latest = results.map((result) => [result.dg, result.hg]).sort(([dateA, hourA], [dateB, hourB]) =>
+    (dateA || '').split('/').reverse().join('').localeCompare((dateB || '').split('/').reverse().join('')) || (hourA || '').localeCompare(hourB || '')).pop() || [];
+  return {
+    national: true, tf: done ? 's' : 'n', dg: latest[0], hg: latest[1],
+    s: { st: sections, ts: allSections, pst: pctOf(sections, allSections) },
+    v: { vv: valid, pvv: pctOf(valid, validBase), vb: blank, pvb: pctOf(blank, votes), tvn: nulls, ptvn: pctOf(nulls, votes) },
+    e: { a: absent, pa: pctOf(absent, voters) },
+    carg: [{ cd: state.office, nv: String(sumOf(results, (result) => readCandidates(result, chamberOffice(state.office, result.cdabr), result.cdabr).office?.nv)) }],
+  };
+}
+
+const nationalLists = new WeakMap();
+function stateCandidates(result, uf) {
+  if (!nationalLists.has(result)) {
+    const { list, projected } = readCandidates(result, chamberOffice(state.office, uf), uf);
+    nationalLists.set(result, { projected, list: list.map((candidate) => ({ ...candidate, uf })) });
+  }
+  return nationalLists.get(result);
+}
+
+// Joins the candidates of every state loaded so far into a single ranking.
+function renderNational() {
+  const loaded = UFS.map(([uf]) => uf).filter((uf) => uf !== 'br').map((uf) => {
+    const url = parliamentUrl(uf);
+    return url && resultCache.get(url) ? { uf, result: resultCache.get(url).result } : null;
+  }).filter(Boolean);
+  if (!loaded.length) return false;
+  const candidates = [];
+  let projected = false;
+  loaded.forEach(({ uf, result }) => {
+    const entry = stateCandidates(result, uf);
+    projected ||= entry.projected;
+    candidates.push(...entry.list);
+  });
+  candidates.sort((a, b) => b.votes - a.votes || a.name.localeCompare(b.name, 'pt-BR'));
+  candidates.forEach((candidate, index) => { candidate.rank = index + 1; });
+  state.result = nationalResult(loaded.map(({ result }) => result));
+  state.resultUrl = `br-${state.office}`;
+  setResultsLoading(false);
+  state.candidates = candidates;
+  state.projected = projected;
+  const time = `${state.result.dg || ''} ${state.result.hg || ''}`.trim();
+  const missing = UFS.length - 1 - loaded.length;
+  setStatus('official', missing ? `DADOS OFICIAIS DO TSE · ${loaded.length} DE ${UFS.length - 1} ESTADOS` : `DADOS OFICIAIS DO TSE${time ? ` · ${time}` : ''}`);
+  renderSummary();
+  renderCandidates();
+  return true;
+}
+
+async function loadNational({ quiet = false } = {}) {
+  const request = state.request;
+  const loading = loadParliament();
+  if (!quiet && !parliamentLoading) renderNational();
+  else if (!quiet) startLoading();
+  await loading;
+  if (request !== state.request) return;
+  if (!renderNational()) {
+    clearResults();
+    setStatus('loading', 'AGUARDANDO PUBLICAÇÃO DO TSE');
+    showMessage('Os resultados deste cargo ainda não foram publicados pelo TSE. A página tenta de novo automaticamente.');
+  }
+  scheduleRefresh();
+}
+
 async function loadResults({ quiet = false } = {}) {
   window.clearTimeout(state.timer);
+  if (isNational()) {
+    state.request += 1;
+    loadNational({ quiet });
+    return;
+  }
   const request = ++state.request;
   const url = resultUrl();
   const cached = cachedResult(url);
   if (!quiet) {
-    state.result = null;
-    state.candidates = [];
-    $('#more-button').hidden = true;
-    $('#results-count').textContent = '';
-    $('#projection-note').hidden = true;
-    if (cached) {
-      showResult(cached.result);
-    } else {
-      renderSummary();
-      showMessage('');
-      showSkeleton();
-    }
+    if (cached) showResult(cached.result, url);
+    else startLoading();
   }
   const age = cached ? Date.now() - cached.fetchedAt : Infinity;
   if (!quiet && age < FRESH_MS) {
@@ -856,20 +1013,20 @@ async function loadResults({ quiet = false } = {}) {
     const entry = await fetchResult(url);
     storeResult(url, entry);
     if (request !== state.request) return;
-    showResult(entry.result);
+    showResult(entry.result, url);
     scheduleRefresh();
     prefetchOtherOffices();
   } catch (error) {
     if (request !== state.request) return;
     console.info('Resultado do TSE indisponível.', error);
-    if (state.result) {
+    if (state.result && state.resultUrl === url) {
       setStatus('error', 'TSE SEM ATUALIZAÇÃO · MOSTRANDO A ÚLTIMA LEITURA');
     } else if (error.missing) {
-      $('#candidates').replaceChildren();
+      clearResults();
       setStatus('loading', 'AGUARDANDO PUBLICAÇÃO DO TSE');
       showMessage('Os resultados deste cargo ainda não foram publicados pelo TSE. A página tenta de novo automaticamente.');
     } else {
-      $('#candidates').replaceChildren();
+      clearResults();
       setStatus('error', 'SEM CONEXÃO COM O TSE');
       showMessage('Não foi possível conectar ao TSE agora. Tentaremos de novo em instantes.', 'error');
     }
@@ -883,6 +1040,7 @@ let prefetchRun = 0;
 async function prefetchOtherOffices() {
   const run = ++prefetchRun;
   const { uf, round } = state;
+  if (uf === 'br') return;
   const urls = officesFor(uf, round)
     .filter(({ cd }) => cd !== state.office)
     .map(({ cd }) => resultUrl(uf, cd, round));

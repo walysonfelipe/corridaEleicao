@@ -103,8 +103,14 @@ a{color:inherit}
 .results-layout{flex:1;display:grid;grid-template-columns:minmax(0,1fr);gap:14px;align-items:start;margin-bottom:14px}
 .results-layout.has-parliament{grid-template-columns:minmax(0,1fr) 420px}
 .results-layout .results-panel{margin-bottom:0}
+.results-layout.is-national .parliament{position:static;order:-1;justify-self:center;width:min(680px,100%);padding:22px 28px 24px}
 
 .parliament{position:sticky;top:14px;display:flex;flex-direction:column;gap:16px;padding:18px 20px 20px;border:1px solid var(--line);background:linear-gradient(145deg,rgba(10,32,72,.97),rgba(5,22,52,.98))}
+.parliament-title{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:-6px}
+.parliament-progress{font:500 9px var(--mono);letter-spacing:1.2px;color:var(--gold)}
+/* Fades only when loading takes a moment, so a quick switch never flashes. */
+.parliament,.results-panel,.summary{transition:opacity .25s}
+.parliament.is-loading,.results-panel.is-loading,.summary.is-loading{opacity:.45;transition-delay:.15s}
 .parliament-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px}
 .pill-group{display:flex;gap:4px}
 .pill{padding:8px 14px;border:1px solid transparent;border-radius:999px;background:transparent;color:var(--muted);font:600 13px var(--body);cursor:pointer}
